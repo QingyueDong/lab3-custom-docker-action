@@ -1,0 +1,92 @@
+# =============================================================================
+# Lab 3 / Lecture 3 - Activity 4: ci.yml
+#
+# On every push to main: run the custom Docker action on data.txt, then commit the
+# updated README.md back to the repository.
+#
+# Why this differs from the slides (see CHANGES_vs_course_materials.md):
+#   The slides run `docker build` + `docker run --rm ...` WITHOUT mounting the
+#   repository. The container then edits /app/README.md - a copy inside the
+#   container that is deleted by --rm - so the real README never changes.
+#   A Docker *container action* fixes this: GitHub mounts the checked-out repo at
+#   /github/workspace and starts the container there, so the edit lands in the
+#   runner's working copy, and the next step can commit it.
+# =============================================================================
+name: CI Workflow
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}      # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: read             # default for every job: read-only
+
+concurrency:                 # one run at a time, so pushes back to main cannot collide
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TZ: Australia/Sydney       # passed into the container too, so timestamps are Sydney time
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # this job pushes README.md back to main
+
+    steps:
+      # Clones the repo onto the runner (slides: actions/checkout@v2, which is long deprecated;
+      # v4 is used here, newer majors v5/v6 exist and run on Node 24).
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Runs OUR custom action. GitHub builds the root Dockerfile, then runs the container
+      # with the repo mounted at /github/workspace (the container's working directory).
+      - name: Run Vowel Frequency Analyzer (custom Docker action)
+        id: vowels
+        uses: ./.github/actions/vowel-frequency-analyzer
+        with:
+          file: data.txt
+
+      # Processing the action's OUTPUT in a later step.
+      - name: Show the result
+        env:
+          FREQ: ${{ steps.vowels.outputs.frequency }}
+        run: |
+          echo "Vowel frequency for data.txt: $FREQ"
+          {
+            echo "### Vowel Frequency Analyzer"
+            echo "- contributor: \`${GITHUB_ACTOR}\`"
+            echo "- result: \`${FREQ}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "--- last lines of README.md ---"
+          tail -n 3 README.md
+
+      # Commit on the runner (credentials stay out of the container).
+      - name: Commit and push README.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Update README with vowel frequency results [skip ci]" || { echo "No changes to commit"; exit 0; }
+          git push origin HEAD:main || {
+            echo "Push rejected (main moved) - rebasing and retrying once"
+            git pull --rebase origin main && git push origin HEAD:main
+          }
+
+  # ---------------------------------------------------------------------------
+  # For comparison only - the slides' approach, fixed with a volume mount.
+  # Uncomment (and comment out the custom-action step above) to try it:
+  #
+  #     - name: Build Docker image
+  #       run: docker build -t vowel-frequency-analyzer:latest .
+  #     - name: Run Docker container (mount the repo so README changes persist)
+  #       run: |
+  #         docker run --rm \
+  #           -v "${{ github.workspace }}:/github/workspace" -w /github/workspace \
+  #           -e GITHUB_USER="${{ github.actor }}" -e GITHUB_SHA -e TZ -e FILE=data.txt \
+  #           vowel-frequency-analyzer:latest
+  # ---------------------------------------------------------------------------

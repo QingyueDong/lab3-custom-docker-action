@@ -1,0 +1,40 @@
+# =============================================================================
+# Lab 3 / Lecture 3 - Activity 5: action.yml (custom Docker container action)
+#
+# A workflow uses this action with:
+#     - uses: ./.github/actions/vowel-frequency-analyzer
+#       with:
+#         file: data.txt
+#
+# Changes vs. the slides (see CHANGES_vs_course_materials.md):
+#   * image: the slides point at someone else's pre-built image
+#     (ghcr.io/<lecturer>/vowel-frequency-analyzer:latest), so YOUR script edits would
+#     never be used. Here the image is built from YOUR repository's root Dockerfile on
+#     every run. The path is relative to THIS file: three levels up = repository root.
+#   * entrypoint: the slides set entrypoint to ['/bin/bash', '/github/scripts/entrypoint.sh'].
+#     runs.entrypoint must be a single string, and /github/scripts does not exist in the
+#     container, so we simply use the ENTRYPOINT from the Dockerfile.
+#   * outputs: added, so the workflow can read the result (course objective:
+#     "passing dynamic inputs ... and processing outputs").
+# =============================================================================
+name: 'Vowel Frequency Analyzer'
+description: 'Custom Docker action: counts vowels in a text file and appends the result to README.md.'
+
+inputs:
+  file:
+    description: 'The path to the text file to analyze (e.g., data.txt).'
+    required: true
+    default: 'data.txt'
+
+outputs:
+  frequency:
+    description: 'Vowel counts, e.g. "a=3, e=5, i=1, o=2, u=0 (total=11)".'
+
+runs:
+  using: 'docker'
+  # Build from the repository-root Dockerfile (path is relative to this action.yml).
+  # GitHub uses the Dockerfile's folder (the repo root) as the docker build context.
+  image: '../../../Dockerfile'
+  env:
+    # Passes the input file path to the container as FILE (same as the slides).
+    FILE: ${{ inputs.file }}

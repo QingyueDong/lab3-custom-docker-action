@@ -1,0 +1,4 @@
+GitHub Actions lets a repository react to events such as a push or a pull request.
+A custom action packages a repeatable task so that any workflow can reuse it.
+This file is the input for the Vowel Frequency Analyzer: edit this text, commit,
+push to main, and watch the README update itself with the new vowel counts.
